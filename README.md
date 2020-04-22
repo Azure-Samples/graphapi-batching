@@ -4,54 +4,95 @@ languages:
 - csharp
 products:
 - dotnet
-description: "Add 150 character max description"
+- ms-graph
+description: "Describes how you can batch request submitted to Microsoft Graph."
 urlFragment: "update-this-to-unique-url-stub"
 ---
 
-# Official Microsoft Sample
+# Batching requests to Microsoft Graph
 
-<!-- 
-Guidelines on README format: https://review.docs.microsoft.com/help/onboard/admin/samples/concepts/readme-template?branch=master
+When using Microsoft Graph to manage inboxes and calendars you might end up needing to submit multiple request in one go for performance and efficiency reasons. Microsoft Graph has batching support for this but it might work a little different than you would expect.
 
-Guidance on onboarding samples to docs.microsoft.com/samples: https://review.docs.microsoft.com/help/onboard/admin/samples/process/onboarding?branch=master
+Basically you can optimize the overhead of submitting multiple reperate request by turning them into a single batch payload but internally Microsoft Graph still handles each request reflected in the payload seperately. This means you have to walk through the response to see whether each request succeeded as this is not an atomic transaction. Below is a description of how a batch can be constructed and handled at runtime.
 
-Taxonomies for products and languages: https://review.docs.microsoft.com/new-hope/information-architecture/metadata/taxonomies?branch=master
--->
+We setup a batch of requests by creating a BatchRequestContent object and inserting a series of BatchRequestStep objects which contain the HttpRequestMessage object that holds a request object that is exactly the same as the ones you would submit seperately.
 
-Give a short description for your sample here. What does it do and why is it important?
+```
+ List<BatchRequestContent> batches = new List<BatchRequestContent>();
+ 
+ var httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, $"https://graph.microsoft.com/v1.0/users/{config["CalendarEmail"]}/events")
+                {
+                    Content = new StringContent(JsonConvert.SerializeObject(e), Encoding.UTF8, "application/json")
+                };
 
-## Contents
+BatchRequestStep requestStep = new BatchRequestStep(events.IndexOf(e).ToString(), httpRequestMessage, null);
+batchRequestContent.AddBatchRequestStep(requestStep);
+ ```
+Next we submit the batch to Microsoft Graph which under the hood calls out to the https://graph.microsoft.com/v1.0/$batch endpoint with a payload that combines all requests in this format:
 
-Outline the file contents of the repository. It helps users navigate the codebase, build configuration and any related assets.
+```
+"requests": [
+    {
+      "id": "1",
+      "method": "GET",
+      "url": "/me/drive/root:/{file}:/content"
+    },
+    ...
+```
+The ID is important as we need to track the status of these request and because the response is unordered.
 
-| File/folder       | Description                                |
-|-------------------|--------------------------------------------|
-| `src`             | Sample source code.                        |
-| `.gitignore`      | Define what to ignore at commit time.      |
-| `CHANGELOG.md`    | List of changes to the sample.             |
-| `CONTRIBUTING.md` | Guidelines for contributing to the sample. |
-| `README.md`       | This README file.                          |
-| `LICENSE`         | The license for the sample.                |
+After the post we call GetResponsesAsync() to get a dictionary to walk through. We can call each individual response by using the Id (dictionary key).
 
-## Prerequisites
 
-Outline the required components and tools that a user might need to have on their machine in order to run the sample. This can be anything from frameworks, SDKs, OS versions or IDE releases.
+```
+response = await client.Batch.Request().PostAsync(batch);
+Dictionary<string, HttpResponseMessage> responses = await response.GetResponsesAsync();
 
-## Setup
+   foreach (string key in responses.Keys)
+                {
+                    HttpResponseMessage httpResponse = await response.GetResponseByIdAsync(key);
+                    var responseContent = await httpResponse.Content.ReadAsStringAsync();
 
-Explain how to prepare the sample once the user clones or downloads the repository. The section should outline every step necessary to install dependencies and set up any settings (for example, API keys and output folders).
+                   ...
+```
+
+The response clearly show us the result come in randomly.
+
+![alt text](https://github.com/valeryjacobs/MSGraphBatch/blob/master/UnorderedBatchResponse.PNG "Logo Title Text 1")
+
+
+## Prerequisites & setup
+
+To run the sample you need an O365 tenant and a (dev) user account which calendar will be used to add events in batches and remove them afterwards. Additionally an application registration needs to be added (or reused) in the Azure AD directory belonging to the O365 tenant in use, including a client secret as we are using the client credential flow to aquire an accesstoken for Microsoft Graph.
+
+Add a local.settings.json to the project with these settings and update their values according to your tenant and app registration setup.
+
+```
+{
+  "Authority": "https://login.microsoftonline.com/",
+  "ClientId": "[Add the client id (application id) from the application registration in Azure AD]",
+  "ClientSecret": "[Add the client secret from the application registration in Azure AD]",
+  "DateFormat": "yyyy-MM-ddTHH:mm:ss",
+  "Scope": "https://graph.microsoft.com/.default",
+  "TenantId": "[Azure AD tenant ID]",
+  "CalendarEmail": "[Email address of the dev user's calendar in which objects will be created and deleted]"
+
+}
+```
 
 ## Running the sample
 
-Outline step-by-step instructions to execute the sample and see its output. Include steps for executing the sample from the IDE, starting specific services in the Azure portal or anything related to the overall launch of the code.
+Run the application and keep the console window and a browser open with the calendar view of the respective user.
 
-## Key concepts
+## Key concepts & considerations
 
-Provide users with more context on the tools and services used in the sample. Explain some of the code that is being used and how services interact with each other.
+Microsoft Graph throttles request as described in [these docs](https://docs.microsoft.com/en-us/graph/throttling#outlook-service-limits). When the limits are exceeded you should expect to see HTTP 429 responses that requires us to back of and retry at a later point in time.
+
+Additionally the amount of steps in a batch is currently limited to ony 20 items (!). To submit more requests we unfortunately need to 'batch the batches'. The sample code shows a simple approach to do this.
 
 ## Contributing
 
-This project welcomes contributions and suggestions.  Most contributions require you to agree to a
+This little sample project welcomes contributions and suggestions.  Most contributions require you to agree to a
 Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
 the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
 
