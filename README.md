@@ -5,8 +5,8 @@ languages:
 products:
 - dotnet
 - ms-graph
-description: "Describes how you can batch request submitted to Microsoft Graph."
-urlFragment: "update-this-to-unique-url-stub"
+description: "Describes how you can batch requests submitted to Microsoft Graph."
+urlFragment: "batching-requests-to-msgraph"
 ---
 
 # Batching requests to Microsoft Graph
