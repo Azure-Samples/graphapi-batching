@@ -58,7 +58,7 @@ Dictionary<string, HttpResponseMessage> responses = await response.GetResponsesA
 
 The response clearly show us the result come in randomly.
 
-![alt text](https://github.com/valeryjacobs/MSGraphBatch/blob/master/UnorderedBatchResponse.PNG "Logo Title Text 1")
+![alt text](https://github.com/Azure-Samples/graphapi-batching/blob/master/UnorderedBatchResponse.PNG "Logo Title Text 1")
 
 
 ## Prerequisites & setup
